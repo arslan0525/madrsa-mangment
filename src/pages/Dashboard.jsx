@@ -202,59 +202,62 @@ const Dashboard = () => {
         </div>
       </div>
 
-      <div className="grid-cols-2">
-        <div className="card" style={{ height: 'auto', minHeight: '400px' }}>
-          <h3 className="urdu-text" style={{ marginBottom: '1.5rem', fontSize: '1.25rem', color: 'var(--primary)' }}>
-            ماہانہ آمدنی اور اخراجات <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>(Trend)</span>
+      <div className="grid-cols-2" style={{ gap: '1rem' }}>
+        <div className="card" style={{ height: 'auto', minHeight: '350px', padding: '1rem' }}>
+          <h3 className="urdu-text" style={{ marginBottom: '1.25rem', fontSize: '1.1rem', color: 'var(--primary)' }}>
+            ماہانہ آمدنی اور اخراجات <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>(Trend)</span>
           </h3>
           {monthlyData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={monthlyData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                <XAxis dataKey="name" tick={{ fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} tickFormatter={(value) => `Rs${value/1000}k`} />
-                <Tooltip 
-                  formatter={(value) => formatCurrency(value)} 
-                  contentStyle={{ borderRadius: '0.5rem', border: 'none', boxShadow: 'var(--shadow-md)' }}
-                />
-                <Legend iconType="circle" wrapperStyle={{ paddingTop: '1rem' }} />
-                <Bar dataKey="income" name="آمدن (Income)" fill="var(--primary)" radius={[4, 4, 0, 0]} barSize={30} />
-                <Bar dataKey="expense" name="خرچ (Expense)" fill="#E2E8F0" radius={[4, 4, 0, 0]} barSize={30} />
-              </BarChart>
-            </ResponsiveContainer>
+            <div style={{ width: '100%', height: '250px' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                  <XAxis dataKey="name" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <Tooltip 
+                    formatter={(value) => formatCurrency(value)} 
+                    contentStyle={{ borderRadius: '0.5rem', border: 'none', boxShadow: 'var(--shadow-md)', fontSize: '12px' }}
+                  />
+                  <Bar dataKey="income" name="آمدن" fill="var(--primary)" radius={[4, 4, 0, 0]} barSize={20} />
+                  <Bar dataKey="expense" name="خرچ" fill="#E2E8F0" radius={[4, 4, 0, 0]} barSize={20} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           ) : (
-            <div style={{ display: 'flex', height: '300px', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }} className="urdu-text">کوئی ڈیٹا موجود نہیں</div>
+            <div style={{ display: 'flex', height: '250px', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }} className="urdu-text">کوئی ڈیٹا موجود نہیں</div>
           )}
         </div>
 
-        <div className="card" style={{ height: 'auto', minHeight: '400px' }}>
-          <h3 className="urdu-text" style={{ marginBottom: '1.5rem', fontSize: '1.25rem', color: 'var(--primary)' }}>
-            عطیات کی اقسام <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>(Income Sources)</span>
+        <div className="card" style={{ height: 'auto', minHeight: '350px', padding: '1rem' }}>
+          <h3 className="urdu-text" style={{ marginBottom: '1.25rem', fontSize: '1.1rem', color: 'var(--primary)' }}>
+            عطیات کی اقسام <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>(Income)</span>
           </h3>
           {categoryData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie 
-                  data={categoryData} 
-                  cx="50%" 
-                  cy="50%" 
-                  innerRadius={70} 
-                  outerRadius={110} 
-                  paddingAngle={2} 
-                  dataKey="value"
-                  stroke="none"
-                >
-                  {categoryData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                </Pie>
-                <Tooltip 
-                  formatter={(value) => formatCurrency(value)}
-                  contentStyle={{ borderRadius: '0.5rem', border: 'none', boxShadow: 'var(--shadow-md)' }}
-                />
-                <Legend iconType="circle" wrapperStyle={{ paddingTop: '1rem' }} />
-              </PieChart>
-            </ResponsiveContainer>
+            <div style={{ width: '100%', height: '250px' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie 
+                    data={categoryData} 
+                    cx="50%" 
+                    cy="50%" 
+                    innerRadius={50} 
+                    outerRadius={80} 
+                    paddingAngle={2} 
+                    dataKey="value"
+                    stroke="none"
+                  >
+                    {categoryData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip 
+                    formatter={(value) => formatCurrency(value)}
+                    contentStyle={{ borderRadius: '0.5rem', border: 'none', boxShadow: 'var(--shadow-md)', fontSize: '12px' }}
+                  />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '10px' }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
           ) : (
-             <div style={{ display: 'flex', height: '300px', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }} className="urdu-text">کوئی ڈیٹا موجود نہیں</div>
+             <div style={{ display: 'flex', height: '250px', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }} className="urdu-text">کوئی ڈیٹا موجود نہیں</div>
           )}
         </div>
       </div>
