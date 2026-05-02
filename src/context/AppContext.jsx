@@ -207,11 +207,16 @@ export const AppProvider = ({ children }) => {
     if (error) throw error;
     
     if (data.user) {
-      await supabase.from('profiles').insert([{
+      const { error: profileError } = await supabase.from('profiles').insert([{
         uid: data.user.id,
         madrasa_name: userData.name, // Using name as madrasa name for now
         phone: userData.phone
       }]);
+      if (profileError) {
+        console.error("Profile creation error:", profileError);
+        // We still return true or we can throw. Throwing is safer so they know it failed.
+        throw new Error(profileError.message);
+      }
     }
     
     setCurrentUser(data.user);

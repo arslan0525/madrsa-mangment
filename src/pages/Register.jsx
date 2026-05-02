@@ -31,7 +31,16 @@ const Register = () => {
       navigate('/profile'); 
     } catch (err) {
       console.error("Reg error:", err);
-      setError('رجسٹریشن میں غلطی (Registration error)');
+      // Translate common Supabase errors
+      let errorMessage = 'رجسٹریشن میں غلطی (Registration error)';
+      if (err.message.includes('already registered')) {
+        errorMessage = 'یہ ای میل پہلے سے رجسٹرڈ ہے (Email already registered)';
+      } else if (err.message.includes('RLS') || err.message.includes('policy')) {
+        errorMessage = 'سیکیورٹی پالیسی کی غلطی۔ براہ کرم لاگ ان کریں۔ (RLS Error)';
+      } else {
+        errorMessage = `غلطی: ${err.message}`;
+      }
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
