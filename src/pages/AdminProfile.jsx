@@ -59,9 +59,9 @@ const AdminProfile = () => {
               <div style={{ fontWeight: 600, fontSize: '1.2rem', color: 'var(--text-main)', marginTop: '0.25rem' }}>{currentUser?.email || 'N/A'}</div>
             </div>
             <div style={{ backgroundColor: 'var(--secondary)', padding: '1rem', borderRadius: '0.75rem', display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-              <Info size={20} style={{ color: 'var(--primary)' }} />
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                This data is stored locally on this device and is not synced with any server.
+              <Settings size={20} style={{ color: 'var(--primary)' }} />
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }} className="urdu-text">
+                آپ کا اکاؤنٹ اور ڈیٹا کلاؤڈ پر محفوظ ہے۔
               </p>
             </div>
           </div>

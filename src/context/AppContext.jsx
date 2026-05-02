@@ -1,84 +1,176 @@
-import React, { createContext, useState, useEffect } from 'react';
+import React, { createContext, useState, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import { supabase } from '../lib/supabase';
 
 export const AppContext = createContext();
 
 export const AppProvider = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState(() => JSON.parse(localStorage.getItem('madrasa_current_user')) || null);
-  const [profile, setProfile] = useState(() => JSON.parse(localStorage.getItem('madrasa_profile')) || null);
-  const [donations, setDonations] = useState(() => JSON.parse(localStorage.getItem('madrasa_donations')) || []);
-  const [expenses, setExpenses] = useState(() => JSON.parse(localStorage.getItem('madrasa_expenses')) || []);
-  const [kitchen, setKitchen] = useState(() => JSON.parse(localStorage.getItem('madrasa_kitchen')) || []);
-  const [students, setStudents] = useState(() => JSON.parse(localStorage.getItem('madrasa_students')) || []);
-  const [donors, setDonors] = useState(() => JSON.parse(localStorage.getItem('madrasa_donors')) || []);
-  const [loading, setLoading] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [donations, setDonations] = useState([]);
+  const [expenses, setExpenses] = useState([]);
+  const [kitchen, setKitchen] = useState([]);
+  const [students, setStudents] = useState([]);
+  const [donors, setDonors] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
-  // Sync to local storage whenever state changes
+  // Initial Auth Check
   useEffect(() => {
-    localStorage.setItem('madrasa_donations', JSON.stringify(donations));
-  }, [donations]);
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setCurrentUser(session.user);
+        fetchData(session.user.id);
+      } else {
+        setLoading(false);
+      }
+    };
 
-  useEffect(() => {
-    localStorage.setItem('madrasa_expenses', JSON.stringify(expenses));
-  }, [expenses]);
+    checkUser();
 
-  useEffect(() => {
-    localStorage.setItem('madrasa_kitchen', JSON.stringify(kitchen));
-  }, [kitchen]);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        setCurrentUser(session.user);
+        fetchData(session.user.id);
+      } else {
+        setCurrentUser(null);
+        setProfile(null);
+        setDonations([]);
+        setExpenses([]);
+        setKitchen([]);
+        setStudents([]);
+        setDonors([]);
+        setLoading(false);
+      }
+    });
 
-  useEffect(() => {
-    localStorage.setItem('madrasa_students', JSON.stringify(students));
-  }, [students]);
+    return () => subscription.unsubscribe();
+  }, []);
 
-  useEffect(() => {
-    localStorage.setItem('madrasa_profile', JSON.stringify(profile));
-  }, [profile]);
+  const fetchData = async (userId) => {
+    setLoading(true);
+    try {
+      const [
+        { data: prof },
+        { data: dons },
+        { data: exps },
+        { data: kit },
+        { data: studs },
+        { data: dons_list }
+      ] = await Promise.all([
+        supabase.from('profiles').select('*').eq('uid', userId).single(),
+        supabase.from('donations').select('*').eq('uid', userId).order('date', { ascending: false }),
+        supabase.from('expenses').select('*').eq('uid', userId).order('date', { ascending: false }),
+        supabase.from('kitchen').select('*').eq('uid', userId).order('date', { ascending: false }),
+        supabase.from('students').select('*').eq('uid', userId).order('created_at', { ascending: false }),
+        supabase.from('donors').select('*').eq('uid', userId).order('created_at', { ascending: false })
+      ]);
 
-  useEffect(() => {
-    localStorage.setItem('madrasa_current_user', JSON.stringify(currentUser));
-  }, [currentUser]);
-
-  useEffect(() => {
-    localStorage.setItem('madrasa_donors', JSON.stringify(donors));
-  }, [donors]);
-
-
-  // Actions
-  const addDonation = (d) => setDonations([d, ...donations]);
-  const deleteDonation = (id) => setDonations(donations.filter(x => x.id !== id));
-
-  const addExpense = (e) => setExpenses([e, ...expenses]);
-  const deleteExpense = (id) => setExpenses(expenses.filter(x => x.id !== id));
-
-  const addKitchenItem = (k) => setKitchen([k, ...kitchen]);
-  const deleteKitchenItem = (id) => setKitchen(kitchen.filter(x => x.id !== id));
-
-  const addDonor = (d) => setDonors([d, ...donors]);
-  const deleteDonor = (id) => setDonors(donors.filter(x => x.id !== id));
-
-  const updateProfile = (p) => setProfile(p);
-
-  // Students Fee Management Actions
-  const addStudent = (studentData) => {
-    setStudents([{ ...studentData, id: uuidv4() }, ...students]);
+      if (prof) setProfile(prof);
+      if (dons) setDonations(dons);
+      if (exps) setExpenses(exps);
+      if (kit) setKitchen(kit);
+      if (studs) setStudents(studs);
+      if (dons_list) setDonors(dons_list);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const updateStudent = (id, updatedData) => {
-    setStudents(students.map(s => s.id === id ? { ...s, ...updatedData } : s));
+  // Data fetching and auth logic already handled above
+
+
+  // Actions helper
+  const withSync = async (fn) => {
+    setSyncing(true);
+    try {
+      await fn();
+    } catch (error) {
+      console.error('Sync error:', error);
+      alert('ڈیٹا سنک کرنے میں دشواری پیش آئی۔ (Sync Error)');
+    } finally {
+      setSyncing(false);
+    }
   };
 
-  const deleteStudent = (id) => {
+  const addDonation = async (d) => {
+    const newDonation = { ...d, uid: currentUser.id };
+    setDonations([newDonation, ...donations]);
+    await withSync(() => supabase.from('donations').insert([newDonation]));
+  };
+
+  const deleteDonation = async (id) => {
+    setDonations(donations.filter(x => x.id !== id));
+    await withSync(() => supabase.from('donations').delete().eq('id', id));
+  };
+
+  const addExpense = async (e) => {
+    const newExpense = { ...e, uid: currentUser.id };
+    setExpenses([newExpense, ...expenses]);
+    await withSync(() => supabase.from('expenses').insert([newExpense]));
+  };
+
+  const deleteExpense = async (id) => {
+    setExpenses(expenses.filter(x => x.id !== id));
+    await withSync(() => supabase.from('expenses').delete().eq('id', id));
+  };
+
+  const addKitchenItem = async (k) => {
+    const newItem = { ...k, uid: currentUser.id };
+    setKitchen([newItem, ...kitchen]);
+    await withSync(() => supabase.from('kitchen').insert([newItem]));
+  };
+
+  const deleteKitchenItem = async (id) => {
+    setKitchen(kitchen.filter(x => x.id !== id));
+    await withSync(() => supabase.from('kitchen').delete().eq('id', id));
+  };
+
+  const addDonor = async (d) => {
+    const newDonor = { ...d, id: uuidv4(), uid: currentUser.id };
+    setDonors([newDonor, ...donors]);
+    await withSync(() => supabase.from('donors').insert([newDonor]));
+  };
+
+  const deleteDonor = async (id) => {
+    setDonors(donors.filter(x => x.id !== id));
+    await withSync(() => supabase.from('donors').delete().eq('id', id));
+  };
+
+  const updateProfile = async (p) => {
+    setProfile(p);
+    await withSync(() => supabase.from('profiles').upsert({ ...p, uid: currentUser.id }));
+  };
+
+  const addStudent = async (studentData) => {
+    const newStudent = { ...studentData, id: uuidv4(), uid: currentUser.id };
+    setStudents([newStudent, ...students]);
+    await withSync(() => supabase.from('students').insert([newStudent]));
+  };
+
+  const updateStudent = async (id, updatedData) => {
+    const updated = students.map(s => s.id === id ? { ...s, ...updatedData } : s);
+    setStudents(updated);
+    await withSync(() => supabase.from('students').update(updatedData).eq('id', id));
+  };
+
+  const deleteStudent = async (id) => {
     setStudents(students.filter(s => s.id !== id));
+    await withSync(() => supabase.from('students').delete().eq('id', id));
   };
 
-  const toggleStudentFee = (studentId, year, month) => {
-    setStudents(students.map(s => {
+  const toggleStudentFee = async (studentId, year, month) => {
+    let updatedStudent = null;
+    const newStudents = students.map(s => {
       if (s.id === studentId) {
         const currentFees = s.fees || {};
         const yearFees = currentFees[year] || {};
         const isPaid = !!yearFees[month];
         
-        return {
+        updatedStudent = {
           ...s,
           fees: {
             ...currentFees,
@@ -88,42 +180,63 @@ export const AppProvider = ({ children }) => {
             }
           }
         };
+        return updatedStudent;
       }
       return s;
-    }));
+    });
+
+    setStudents(newStudents);
+    if (updatedStudent) {
+      await withSync(() => supabase.from('students').update({ fees: updatedStudent.fees }).eq('id', studentId));
+    }
   };
 
-  // Auth Mock Actions
+  // Auth Actions
   const login = async (email, password) => {
-    // Mock login that just sets a local user
-    // Since it's a completely local app, any login can be accepted if it matches a stored PIN, or just set it
-    const user = { id: 'local_user', email: email, name: email.split('@')[0] };
-    setCurrentUser(user);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    setCurrentUser(data.user);
     return true;
   };
 
   const register = async (userData) => {
-    const user = { id: 'local_user', email: userData.email, name: userData.name };
-    setCurrentUser(user);
+    const { data, error } = await supabase.auth.signUp({
+      email: userData.email,
+      password: userData.password,
+    });
+    if (error) throw error;
+    
+    if (data.user) {
+      await supabase.from('profiles').insert([{
+        uid: data.user.id,
+        madrasa_name: userData.name, // Using name as madrasa name for now
+        phone: userData.phone
+      }]);
+    }
+    
+    setCurrentUser(data.user);
     return true;
   };
 
   const logout = async () => {
+    await supabase.auth.signOut();
     setCurrentUser(null);
-    // Don't clear local storage if we want data to persist, just logout the session
   };
 
-  const resetPassword = async (identifier) => {
-    return 'email_sent'; // Mock
+  const resetPassword = async (email) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    if (error) throw error;
+    return 'email_sent';
   };
 
   const updatePassword = async (newPassword) => {
-    // Mock
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) throw error;
   };
 
   return (
     <AppContext.Provider value={{
-      currentUser, login, register, logout, resetPassword, updatePassword, loading,
+      currentUser, login, register, logout, resetPassword, updatePassword, loading, syncing,
       profile, updateProfile,
       donations, addDonation, deleteDonation,
       expenses, addExpense, deleteExpense,

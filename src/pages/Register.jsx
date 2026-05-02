@@ -131,7 +131,7 @@ const Register = () => {
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '2rem', padding: '0.75rem', backgroundColor: 'var(--secondary)', borderRadius: '0.75rem' }}>
             <ShieldCheck size={20} style={{ color: 'var(--primary)' }} />
-            <span className="urdu-text" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>آپ کا تمام ڈیٹا مقامی طور پر محفوظ کیا جاتا ہے۔</span>
+            <span className="urdu-text" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>آپ کا تمام ڈیٹا کلاؤڈ پر محفوظ اور سنک کیا جاتا ہے۔</span>
           </div>
 
           <button type="submit" disabled={loading} className="btn btn-primary urdu-text" style={{ width: '100%', padding: '1rem', fontSize: '1.25rem', display: 'flex', justifyContent: 'center' }}>

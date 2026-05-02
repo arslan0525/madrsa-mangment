@@ -11,64 +11,83 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- 1. Profiles Table
 CREATE TABLE IF NOT EXISTS profiles (
-  uid TEXT PRIMARY KEY,
-  madrasa_name TEXT,
-  manager_name TEXT
-);
-
--- 1.5 Madrasa Settings (Linked to uid)
-CREATE TABLE IF NOT EXISTS madrasa (
-  uid TEXT PRIMARY KEY,
+  uid UUID PRIMARY KEY REFERENCES auth.users(id),
   madrasa_name TEXT,
   manager_name TEXT,
   address TEXT,
-  phone TEXT
+  phone TEXT,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 2. Donations Table
-CREATE TABLE donations (
+CREATE TABLE IF NOT EXISTS donations (
   id TEXT PRIMARY KEY,
-  uid TEXT,
+  uid UUID REFERENCES auth.users(id),
   donor_name TEXT,
   phone TEXT,
   amount NUMERIC,
   donation_type TEXT,
   item_type TEXT,
-  date TEXT
+  date TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 3. Expenses Table
-CREATE TABLE expenses (
+CREATE TABLE IF NOT EXISTS expenses (
   id TEXT PRIMARY KEY,
-  uid TEXT,
+  uid UUID REFERENCES auth.users(id),
   expense_type TEXT,
   amount NUMERIC,
   notes TEXT,
-  date TEXT
+  date TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 4. Kitchen Table
-CREATE TABLE kitchen (
+CREATE TABLE IF NOT EXISTS kitchen (
   id TEXT PRIMARY KEY,
-  uid TEXT,
+  uid UUID REFERENCES auth.users(id),
   item_name TEXT,
   quantity TEXT,
   type TEXT,
-  date TEXT
+  date TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 5. Students Table
-CREATE TABLE students (
-  uid TEXT PRIMARY KEY,
-  count NUMERIC
+CREATE TABLE IF NOT EXISTS students (
+  id TEXT PRIMARY KEY,
+  uid UUID REFERENCES auth.users(id),
+  name TEXT,
+  monthlyFee NUMERIC,
+  fees JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Disable Row Level Security (RLS) for testing purposes
--- Warning: In a real production environment, you should enable RLS and write policies.
-ALTER TABLE users DISABLE ROW LEVEL SECURITY;
-ALTER TABLE madrasa DISABLE ROW LEVEL SECURITY;
-ALTER TABLE profiles DISABLE ROW LEVEL SECURITY;
-ALTER TABLE donations DISABLE ROW LEVEL SECURITY;
-ALTER TABLE expenses DISABLE ROW LEVEL SECURITY;
-ALTER TABLE kitchen DISABLE ROW LEVEL SECURITY;
-ALTER TABLE students DISABLE ROW LEVEL SECURITY;
+-- 6. Donors Table (List of regular donors)
+CREATE TABLE IF NOT EXISTS donors (
+  id TEXT PRIMARY KEY,
+  uid UUID REFERENCES auth.users(id),
+  name TEXT,
+  phone TEXT,
+  address TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Enable Row Level Security (RLS)
+-- To start simply, we can use a policy that allows everything if authenticated, 
+-- but normally you'd restrict by uid.
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE donations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE kitchen ENABLE ROW LEVEL SECURITY;
+ALTER TABLE students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE donors ENABLE ROW LEVEL SECURITY;
+
+-- Basic Policies (Everyone can only see/edit their own data)
+CREATE POLICY "Users can only see their own profile" ON profiles FOR ALL USING (auth.uid() = uid);
+CREATE POLICY "Users can only see their own donations" ON donations FOR ALL USING (auth.uid() = uid);
+CREATE POLICY "Users can only see their own expenses" ON expenses FOR ALL USING (auth.uid() = uid);
+CREATE POLICY "Users can only see their own kitchen" ON kitchen FOR ALL USING (auth.uid() = uid);
+CREATE POLICY "Users can only see their own students" ON students FOR ALL USING (auth.uid() = uid);
+CREATE POLICY "Users can only see their own donors" ON donors FOR ALL USING (auth.uid() = uid);
