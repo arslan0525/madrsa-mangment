@@ -1,6 +1,5 @@
 import React, { createContext, useState, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { supabase } from '../lib/supabase';
 
 export const AppContext = createContext();
 
@@ -17,160 +16,136 @@ export const AppProvider = ({ children }) => {
 
   // Initial Auth Check
   useEffect(() => {
-    const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        setCurrentUser(session.user);
-        fetchData(session.user.id);
+    const checkUser = () => {
+      const storedUser = localStorage.getItem('madrasa_user');
+      if (storedUser) {
+        const user = JSON.parse(storedUser);
+        setCurrentUser(user);
+        fetchData(user.id);
       } else {
         setLoading(false);
       }
     };
-
     checkUser();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) {
-        setCurrentUser(session.user);
-        fetchData(session.user.id);
-      } else {
-        setCurrentUser(null);
-        setProfile(null);
-        setDonations([]);
-        setExpenses([]);
-        setKitchen([]);
-        setStudents([]);
-        setDonors([]);
-        setLoading(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
   }, []);
 
-  const fetchData = async (userId) => {
+  const fetchData = (userId) => {
     setLoading(true);
     try {
-      const [
-        { data: prof },
-        { data: dons },
-        { data: exps },
-        { data: kit },
-        { data: studs },
-        { data: dons_list }
-      ] = await Promise.all([
-        supabase.from('profiles').select('*').eq('uid', userId).single(),
-        supabase.from('donations').select('*').eq('uid', userId).order('date', { ascending: false }),
-        supabase.from('expenses').select('*').eq('uid', userId).order('date', { ascending: false }),
-        supabase.from('kitchen').select('*').eq('uid', userId).order('date', { ascending: false }),
-        supabase.from('students').select('*').eq('uid', userId).order('created_at', { ascending: false }),
-        supabase.from('donors').select('*').eq('uid', userId).order('created_at', { ascending: false })
-      ]);
+      const storedProfile = localStorage.getItem(`madrasa_profile_${userId}`);
+      if (storedProfile) setProfile(JSON.parse(storedProfile));
 
-      if (prof) setProfile(prof);
-      if (dons) setDonations(dons);
-      if (exps) setExpenses(exps);
-      if (kit) setKitchen(kit);
-      if (studs) setStudents(studs);
-      if (dons_list) setDonors(dons_list);
+      const storedDonations = localStorage.getItem(`madrasa_donations_${userId}`);
+      if (storedDonations) setDonations(JSON.parse(storedDonations));
+
+      const storedExpenses = localStorage.getItem(`madrasa_expenses_${userId}`);
+      if (storedExpenses) setExpenses(JSON.parse(storedExpenses));
+
+      const storedKitchen = localStorage.getItem(`madrasa_kitchen_${userId}`);
+      if (storedKitchen) setKitchen(JSON.parse(storedKitchen));
+
+      const storedStudents = localStorage.getItem(`madrasa_students_${userId}`);
+      if (storedStudents) setStudents(JSON.parse(storedStudents));
+
+      const storedDonors = localStorage.getItem(`madrasa_donors_${userId}`);
+      if (storedDonors) setDonors(JSON.parse(storedDonors));
     } catch (error) {
-      console.error('Error fetching data:', error);
+      console.error('Error fetching data from local storage:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  // Data fetching and auth logic already handled above
-
-
-  // Actions helper
-  const withSync = async (fn) => {
-    setSyncing(true);
-    try {
-      await fn();
-    } catch (error) {
-      console.error('Sync error:', error);
-      alert('ڈیٹا سنک کرنے میں دشواری پیش آئی۔ (Sync Error)');
-    } finally {
-      setSyncing(false);
+  const saveData = (key, data) => {
+    if (currentUser) {
+      localStorage.setItem(`madrasa_${key}_${currentUser.id}`, JSON.stringify(data));
     }
   };
 
   const addDonation = async (d) => {
-    const newDonation = { ...d, uid: currentUser.id };
-    setDonations([newDonation, ...donations]);
-    await withSync(() => supabase.from('donations').insert([newDonation]));
+    const newDonation = { ...d, id: uuidv4() };
+    const updated = [newDonation, ...donations];
+    setDonations(updated);
+    saveData('donations', updated);
   };
 
   const deleteDonation = async (id) => {
-    setDonations(donations.filter(x => x.id !== id));
-    await withSync(() => supabase.from('donations').delete().eq('id', id));
+    const updated = donations.filter(x => x.id !== id);
+    setDonations(updated);
+    saveData('donations', updated);
   };
 
   const addExpense = async (e) => {
-    const newExpense = { ...e, uid: currentUser.id };
-    setExpenses([newExpense, ...expenses]);
-    await withSync(() => supabase.from('expenses').insert([newExpense]));
+    const newExpense = { ...e, id: uuidv4() };
+    const updated = [newExpense, ...expenses];
+    setExpenses(updated);
+    saveData('expenses', updated);
   };
 
   const deleteExpense = async (id) => {
-    setExpenses(expenses.filter(x => x.id !== id));
-    await withSync(() => supabase.from('expenses').delete().eq('id', id));
+    const updated = expenses.filter(x => x.id !== id);
+    setExpenses(updated);
+    saveData('expenses', updated);
   };
 
   const addKitchenItem = async (k) => {
-    const newItem = { ...k, uid: currentUser.id };
-    setKitchen([newItem, ...kitchen]);
-    await withSync(() => supabase.from('kitchen').insert([newItem]));
+    const newItem = { ...k, id: uuidv4() };
+    const updated = [newItem, ...kitchen];
+    setKitchen(updated);
+    saveData('kitchen', updated);
   };
 
   const deleteKitchenItem = async (id) => {
-    setKitchen(kitchen.filter(x => x.id !== id));
-    await withSync(() => supabase.from('kitchen').delete().eq('id', id));
+    const updated = kitchen.filter(x => x.id !== id);
+    setKitchen(updated);
+    saveData('kitchen', updated);
   };
 
   const addDonor = async (d) => {
-    const newDonor = { ...d, id: uuidv4(), uid: currentUser.id };
-    setDonors([newDonor, ...donors]);
-    await withSync(() => supabase.from('donors').insert([newDonor]));
+    const newDonor = { ...d, id: uuidv4() };
+    const updated = [newDonor, ...donors];
+    setDonors(updated);
+    saveData('donors', updated);
   };
 
   const deleteDonor = async (id) => {
-    setDonors(donors.filter(x => x.id !== id));
-    await withSync(() => supabase.from('donors').delete().eq('id', id));
+    const updated = donors.filter(x => x.id !== id);
+    setDonors(updated);
+    saveData('donors', updated);
   };
 
   const updateProfile = async (p) => {
     setProfile(p);
-    await withSync(() => supabase.from('profiles').upsert({ ...p, uid: currentUser.id }));
+    saveData('profile', p);
   };
 
   const addStudent = async (studentData) => {
-    const newStudent = { ...studentData, id: uuidv4(), uid: currentUser.id };
-    setStudents([newStudent, ...students]);
-    await withSync(() => supabase.from('students').insert([newStudent]));
+    const newStudent = { ...studentData, id: uuidv4() };
+    const updated = [newStudent, ...students];
+    setStudents(updated);
+    saveData('students', updated);
   };
 
   const updateStudent = async (id, updatedData) => {
     const updated = students.map(s => s.id === id ? { ...s, ...updatedData } : s);
     setStudents(updated);
-    await withSync(() => supabase.from('students').update(updatedData).eq('id', id));
+    saveData('students', updated);
   };
 
   const deleteStudent = async (id) => {
-    setStudents(students.filter(s => s.id !== id));
-    await withSync(() => supabase.from('students').delete().eq('id', id));
+    const updated = students.filter(s => s.id !== id);
+    setStudents(updated);
+    saveData('students', updated);
   };
 
   const toggleStudentFee = async (studentId, year, month) => {
-    let updatedStudent = null;
     const newStudents = students.map(s => {
       if (s.id === studentId) {
         const currentFees = s.fees || {};
         const yearFees = currentFees[year] || {};
         const isPaid = !!yearFees[month];
         
-        updatedStudent = {
+        return {
           ...s,
           fees: {
             ...currentFees,
@@ -180,63 +155,87 @@ export const AppProvider = ({ children }) => {
             }
           }
         };
-        return updatedStudent;
       }
       return s;
     });
 
     setStudents(newStudents);
-    if (updatedStudent) {
-      await withSync(() => supabase.from('students').update({ fees: updatedStudent.fees }).eq('id', studentId));
-    }
+    saveData('students', newStudents);
   };
 
   // Auth Actions
   const login = async (email, password) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-    setCurrentUser(data.user);
-    return true;
+    const usersStr = localStorage.getItem('madrasa_users') || '[]';
+    const users = JSON.parse(usersStr);
+    const user = users.find(u => u.email === email && u.password === password);
+    
+    if (user) {
+      setCurrentUser(user);
+      localStorage.setItem('madrasa_user', JSON.stringify(user));
+      fetchData(user.id);
+      return true;
+    } else {
+      throw new Error('Invalid email or password');
+    }
   };
 
   const register = async (userData) => {
-    const { data, error } = await supabase.auth.signUp({
+    const usersStr = localStorage.getItem('madrasa_users') || '[]';
+    const users = JSON.parse(usersStr);
+    
+    if (users.find(u => u.email === userData.email)) {
+      throw new Error('Email already registered');
+    }
+
+    const newUser = {
+      id: uuidv4(),
       email: userData.email,
       password: userData.password,
-    });
-    if (error) throw error;
+    };
+
+    users.push(newUser);
+    localStorage.setItem('madrasa_users', JSON.stringify(users));
+
+    const initialProfile = {
+      madrasa_name: userData.name,
+      phone: userData.phone
+    };
+
+    setCurrentUser(newUser);
+    localStorage.setItem('madrasa_user', JSON.stringify(newUser));
+    setProfile(initialProfile);
+    localStorage.setItem(`madrasa_profile_${newUser.id}`, JSON.stringify(initialProfile));
     
-    if (data.user) {
-      const { error: profileError } = await supabase.from('profiles').insert([{
-        uid: data.user.id,
-        madrasa_name: userData.name, // Using name as madrasa name for now
-        phone: userData.phone
-      }]);
-      if (profileError) {
-        console.error("Profile creation error:", profileError);
-        // We still return true or we can throw. Throwing is safer so they know it failed.
-        throw new Error(profileError.message);
-      }
-    }
-    
-    setCurrentUser(data.user);
     return true;
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
+    localStorage.removeItem('madrasa_user');
     setCurrentUser(null);
+    setProfile(null);
+    setDonations([]);
+    setExpenses([]);
+    setKitchen([]);
+    setStudents([]);
+    setDonors([]);
   };
 
   const resetPassword = async (email) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email);
-    if (error) throw error;
-    return 'email_sent';
+    throw new Error('Password reset is not supported in local mode.');
   };
 
   const updatePassword = async (newPassword) => {
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    if (error) throw error;
+    if (!currentUser) return;
+    
+    const usersStr = localStorage.getItem('madrasa_users') || '[]';
+    let users = JSON.parse(usersStr);
+    
+    users = users.map(u => u.id === currentUser.id ? { ...u, password: newPassword } : u);
+    localStorage.setItem('madrasa_users', JSON.stringify(users));
+    
+    const updatedUser = { ...currentUser, password: newPassword };
+    setCurrentUser(updatedUser);
+    localStorage.setItem('madrasa_user', JSON.stringify(updatedUser));
   };
 
   return (

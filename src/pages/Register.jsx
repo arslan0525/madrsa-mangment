@@ -31,13 +31,10 @@ const Register = () => {
       navigate('/profile'); 
     } catch (err) {
       console.error("Reg error:", err);
-      // Translate common Supabase errors
       let errorMessage = 'رجسٹریشن میں غلطی (Registration error)';
-      if (err.message.includes('already registered')) {
+      if (err.message && err.message.includes('already registered')) {
         errorMessage = 'یہ ای میل پہلے سے رجسٹرڈ ہے (Email already registered)';
-      } else if (err.message.includes('RLS') || err.message.includes('policy')) {
-        errorMessage = 'سیکیورٹی پالیسی کی غلطی۔ براہ کرم لاگ ان کریں۔ (RLS Error)';
-      } else {
+      } else if (err.message) {
         errorMessage = `غلطی: ${err.message}`;
       }
       setError(errorMessage);
@@ -140,7 +137,7 @@ const Register = () => {
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '2rem', padding: '0.75rem', backgroundColor: 'var(--secondary)', borderRadius: '0.75rem' }}>
             <ShieldCheck size={20} style={{ color: 'var(--primary)' }} />
-            <span className="urdu-text" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>آپ کا تمام ڈیٹا کلاؤڈ پر محفوظ اور سنک کیا جاتا ہے۔</span>
+            <span className="urdu-text" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>آپ کا تمام ڈیٹا اس ڈیوائس پر محفوظ کیا جاتا ہے۔</span>
           </div>
 
           <button type="submit" disabled={loading} className="btn btn-primary urdu-text" style={{ width: '100%', padding: '1rem', fontSize: '1.25rem', display: 'flex', justifyContent: 'center' }}>
