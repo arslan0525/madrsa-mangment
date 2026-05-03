@@ -18,20 +18,11 @@ function verifyToken(event) {
   return jwt.verify(token, JWT_SECRET);
 }
 
+const ALLOWED = ['donations', 'expenses', 'kitchen', 'students', 'donors', 'profiles'];
+
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers, body: '' };
-  }
-
-  // Extract collection name from path
-  // path: /api/data/donations, /api/data/expenses, etc.
-  const pathParts = event.path.replace('/.netlify/functions/data', '').replace('/api/data', '').split('/').filter(Boolean);
-  const collectionName = pathParts[0]; // donations, expenses, kitchen, students, donors, profiles
-  const itemId = pathParts[1]; // optional item ID
-
-  const ALLOWED = ['donations', 'expenses', 'kitchen', 'students', 'donors', 'profiles'];
-  if (!ALLOWED.includes(collectionName)) {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid collection' }) };
   }
 
   let decoded;
@@ -43,15 +34,20 @@ exports.handler = async (event) => {
 
   const uid = decoded.id;
   const body = event.body ? JSON.parse(event.body) : {};
+  const { collection, action, item, id } = body;
+
+  if (!ALLOWED.includes(collection)) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid collection: ' + collection }) };
+  }
 
   try {
     const client = await connectDB();
     const db = client.db(DB_NAME);
-    const col = db.collection(collectionName);
+    const col = db.collection(collection);
 
-    // GET - fetch all data for user
-    if (event.httpMethod === 'GET') {
-      if (collectionName === 'profiles') {
+    // GET - fetch all
+    if (action === 'get') {
+      if (collection === 'profiles') {
         const doc = await col.findOne({ uid });
         return { statusCode: 200, headers, body: JSON.stringify(doc || {}) };
       }
@@ -59,33 +55,32 @@ exports.handler = async (event) => {
       return { statusCode: 200, headers, body: JSON.stringify(docs) };
     }
 
-    // POST - add new item
-    if (event.httpMethod === 'POST') {
-      if (collectionName === 'profiles') {
-        await col.updateOne({ uid }, { $set: { ...body, uid } }, { upsert: true });
+    // ADD - insert new
+    if (action === 'add') {
+      if (collection === 'profiles') {
+        await col.updateOne({ uid }, { $set: { ...item, uid } }, { upsert: true });
         const updated = await col.findOne({ uid });
         return { statusCode: 200, headers, body: JSON.stringify(updated) };
       }
-      const newItem = { ...body, id: uuidv4(), uid, createdAt: new Date() };
+      const newItem = { ...item, id: uuidv4(), uid, createdAt: new Date() };
       await col.insertOne(newItem);
       return { statusCode: 200, headers, body: JSON.stringify(newItem) };
     }
 
-    // PUT - update item
-    if (event.httpMethod === 'PUT') {
-      const { id, ...updateData } = body;
-      await col.updateOne({ id: id || itemId, uid }, { $set: updateData });
+    // UPDATE
+    if (action === 'update') {
+      const { id: itemId, ...updateData } = item;
+      await col.updateOne({ id: itemId, uid }, { $set: updateData });
       return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
     }
 
-    // DELETE - delete item
-    if (event.httpMethod === 'DELETE') {
-      const idToDelete = itemId || body.id;
-      await col.deleteOne({ id: idToDelete, uid });
+    // DELETE
+    if (action === 'delete') {
+      await col.deleteOne({ id, uid });
       return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
     }
 
-    return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Unknown action' }) };
 
   } catch (err) {
     console.error('Data error:', err);

@@ -17,8 +17,8 @@ exports.handler = async (event) => {
     return { statusCode: 200, headers, body: '' };
   }
 
-  const path = event.path.replace('/.netlify/functions/auth', '').replace('/api/auth', '');
   const body = event.body ? JSON.parse(event.body) : {};
+  const action = body.action; // 'login' or 'register'
 
   try {
     const client = await connectDB();
@@ -26,9 +26,8 @@ exports.handler = async (event) => {
     const users = db.collection('users');
 
     // ---- REGISTER ----
-    if (path === '/register' && event.httpMethod === 'POST') {
+    if (action === 'register') {
       const { email, password, name, phone } = body;
-
       const existing = await users.findOne({ email });
       if (existing) {
         return { statusCode: 400, headers, body: JSON.stringify({ error: 'Email already registered' }) };
@@ -36,65 +35,32 @@ exports.handler = async (event) => {
 
       const hashedPassword = await bcrypt.hash(password, 10);
       const userId = uuidv4();
-
-      const newUser = {
-        id: userId,
-        email,
-        password: hashedPassword,
-        name,
-        phone,
-        createdAt: new Date(),
-      };
-
+      const newUser = { id: userId, email, password: hashedPassword, name, phone, createdAt: new Date() };
       await users.insertOne(newUser);
 
       const profiles = db.collection('profiles');
-      await profiles.insertOne({
-        uid: userId,
-        madrasa_name: name,
-        phone,
-        createdAt: new Date(),
-      });
+      await profiles.insertOne({ uid: userId, madrasa_name: name, phone, createdAt: new Date() });
 
       const token = jwt.sign({ id: userId, email }, JWT_SECRET, { expiresIn: '30d' });
-
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({
-          token,
-          user: { id: userId, email, name, phone },
-        }),
-      };
+      return { statusCode: 200, headers, body: JSON.stringify({ token, user: { id: userId, email, name, phone } }) };
     }
 
     // ---- LOGIN ----
-    if (path === '/login' && event.httpMethod === 'POST') {
+    if (action === 'login') {
       const { email, password } = body;
-
       const user = await users.findOne({ email });
       if (!user) {
         return { statusCode: 401, headers, body: JSON.stringify({ error: 'Invalid email or password' }) };
       }
-
       const isMatch = await bcrypt.compare(password, user.password);
       if (!isMatch) {
         return { statusCode: 401, headers, body: JSON.stringify({ error: 'Invalid email or password' }) };
       }
-
       const token = jwt.sign({ id: user.id, email }, JWT_SECRET, { expiresIn: '30d' });
-
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({
-          token,
-          user: { id: user.id, email: user.email, name: user.name, phone: user.phone },
-        }),
-      };
+      return { statusCode: 200, headers, body: JSON.stringify({ token, user: { id: user.id, email: user.email, name: user.name, phone: user.phone } }) };
     }
 
-    return { statusCode: 404, headers, body: JSON.stringify({ error: 'Not found' }) };
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Unknown action' }) };
 
   } catch (err) {
     console.error('Auth error:', err);
