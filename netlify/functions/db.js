@@ -1,16 +1,10 @@
-const { MongoClient } = require('mongodb');
+const { getStore } = require('@netlify/blobs');
 
-const MONGODB_URI = process.env.MONGODB_URI;
-const DB_NAME = 'apna_madrasa';
-
-let cachedClient = null;
-
-async function connectDB() {
-  if (cachedClient) return cachedClient;
-  const client = new MongoClient(MONGODB_URI);
-  await client.connect();
-  cachedClient = client;
-  return client;
+function getDbStore() {
+  return getStore({
+    name: 'apna_madrasa_store',
+    consistency: 'strong'
+  });
 }
 
-module.exports = { connectDB, DB_NAME };
+module.exports = { getDbStore };

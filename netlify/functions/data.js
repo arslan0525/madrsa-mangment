@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { connectDB, DB_NAME } = require('./db');
+const { getDbStore } = require('./db');
 const { v4: uuidv4 } = require('uuid');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'apna-madrasa-secret-key-2024';
@@ -41,42 +41,56 @@ exports.handler = async (event) => {
   }
 
   try {
-    const client = await connectDB();
-    const db = client.db(DB_NAME);
-    const col = db.collection(collection);
+    const store = getDbStore();
+    const collectionKey = collection === 'profiles' ? 'profiles' : `${collection}_${uid}`;
+    let collData = await store.get(collectionKey, { type: 'json' }) || [];
 
     // GET - fetch all
     if (action === 'get') {
       if (collection === 'profiles') {
-        const doc = await col.findOne({ uid });
+        const doc = collData.find(p => p.uid === uid);
         return { statusCode: 200, headers, body: JSON.stringify(doc || {}) };
       }
-      const docs = await col.find({ uid }).sort({ createdAt: -1 }).toArray();
-      return { statusCode: 200, headers, body: JSON.stringify(docs) };
+      // Sort by createdAt descending
+      collData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      return { statusCode: 200, headers, body: JSON.stringify(collData) };
     }
 
     // ADD - insert new
     if (action === 'add') {
       if (collection === 'profiles') {
-        await col.updateOne({ uid }, { $set: { ...item, uid } }, { upsert: true });
-        const updated = await col.findOne({ uid });
+        const index = collData.findIndex(p => p.uid === uid);
+        if (index > -1) {
+          collData[index] = { ...collData[index], ...item, uid };
+        } else {
+          collData.push({ ...item, uid, createdAt: new Date().toISOString() });
+        }
+        await store.setJSON(collectionKey, collData);
+        const updated = collData.find(p => p.uid === uid);
         return { statusCode: 200, headers, body: JSON.stringify(updated) };
       }
-      const newItem = { ...item, id: uuidv4(), uid, createdAt: new Date() };
-      await col.insertOne(newItem);
+      
+      const newItem = { ...item, id: uuidv4(), uid, createdAt: new Date().toISOString() };
+      collData.push(newItem);
+      await store.setJSON(collectionKey, collData);
       return { statusCode: 200, headers, body: JSON.stringify(newItem) };
     }
 
     // UPDATE
     if (action === 'update') {
       const { id: itemId, ...updateData } = item;
-      await col.updateOne({ id: itemId, uid }, { $set: updateData });
+      const index = collData.findIndex(d => d.id === itemId && d.uid === uid);
+      if (index > -1) {
+        collData[index] = { ...collData[index], ...updateData };
+        await store.setJSON(collectionKey, collData);
+      }
       return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
     }
 
     // DELETE
     if (action === 'delete') {
-      await col.deleteOne({ id, uid });
+      collData = collData.filter(d => !(d.id === id && d.uid === uid));
+      await store.setJSON(collectionKey, collData);
       return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
     }
 

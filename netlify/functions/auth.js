@@ -1,6 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { connectDB, DB_NAME } = require('./db');
+const { getDbStore } = require('./db');
 const { v4: uuidv4 } = require('uuid');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'apna-madrasa-secret-key-2024';
@@ -18,28 +18,30 @@ exports.handler = async (event) => {
   }
 
   const body = event.body ? JSON.parse(event.body) : {};
-  const action = body.action; // 'login' or 'register'
+  const action = body.action;
 
   try {
-    const client = await connectDB();
-    const db = client.db(DB_NAME);
-    const users = db.collection('users');
-
+    const store = getDbStore();
+    const usersData = await store.get('users', { type: 'json' }) || [];
+    
     // ---- REGISTER ----
     if (action === 'register') {
       const { email, password, name, phone } = body;
-      const existing = await users.findOne({ email });
+      const existing = usersData.find(u => u.email === email);
       if (existing) {
         return { statusCode: 400, headers, body: JSON.stringify({ error: 'Email already registered' }) };
       }
 
       const hashedPassword = await bcrypt.hash(password, 10);
       const userId = uuidv4();
-      const newUser = { id: userId, email, password: hashedPassword, name, phone, createdAt: new Date() };
-      await users.insertOne(newUser);
+      const newUser = { id: userId, email, password: hashedPassword, name, phone, createdAt: new Date().toISOString() };
+      
+      usersData.push(newUser);
+      await store.setJSON('users', usersData);
 
-      const profiles = db.collection('profiles');
-      await profiles.insertOne({ uid: userId, madrasa_name: name, phone, createdAt: new Date() });
+      const profilesData = await store.get('profiles', { type: 'json' }) || [];
+      profilesData.push({ uid: userId, madrasa_name: name, phone, createdAt: new Date().toISOString() });
+      await store.setJSON('profiles', profilesData);
 
       const token = jwt.sign({ id: userId, email }, JWT_SECRET, { expiresIn: '30d' });
       return { statusCode: 200, headers, body: JSON.stringify({ token, user: { id: userId, email, name, phone } }) };
@@ -48,7 +50,7 @@ exports.handler = async (event) => {
     // ---- LOGIN ----
     if (action === 'login') {
       const { email, password } = body;
-      const user = await users.findOne({ email });
+      const user = usersData.find(u => u.email === email);
       if (!user) {
         return { statusCode: 401, headers, body: JSON.stringify({ error: 'Invalid email or password' }) };
       }
