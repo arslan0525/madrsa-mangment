@@ -1,36 +1,10 @@
 import React, { createContext, useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 
 export const AppContext = createContext();
 
-// Helper to call Netlify functions
-async function authApi(action, payload) {
-  const res = await fetch('/.netlify/functions/auth', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, ...payload }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Server error');
-  return data;
-}
-
-async function dataApi(collection, action, payload = {}, token) {
-  const res = await fetch('/.netlify/functions/data', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-    body: JSON.stringify({ collection, action, ...payload }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Server error');
-  return data;
-}
-
 export const AppProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
-  const [token, setToken] = useState(null);
   const [profile, setProfile] = useState(null);
   const [donations, setDonations] = useState([]);
   const [expenses, setExpenses] = useState([]);
@@ -41,35 +15,85 @@ export const AppProvider = ({ children }) => {
   const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
-    const savedToken = localStorage.getItem('madrasa_token');
-    const savedUser = localStorage.getItem('madrasa_user');
-    if (savedToken && savedUser) {
-      const user = JSON.parse(savedUser);
-      setToken(savedToken);
-      setCurrentUser(user);
-      fetchAllData(savedToken);
-    } else {
-      setLoading(false);
-    }
+    // Check active session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setCurrentUser(session.user);
+        fetchAllData(session.user.id);
+      } else {
+        setLoading(false);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setCurrentUser(session.user);
+        fetchAllData(session.user.id);
+      } else {
+        setCurrentUser(null);
+        clearData();
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const fetchAllData = async (tkn) => {
+  const clearData = () => {
+    setProfile(null);
+    setDonations([]);
+    setExpenses([]);
+    setKitchen([]);
+    setStudents([]);
+    setDonors([]);
+  };
+
+  const fetchAllData = async (uid) => {
     setLoading(true);
     try {
-      const [prof, dons, exps, kit, studs, dons_list] = await Promise.all([
-        dataApi('profiles', 'get', {}, tkn),
-        dataApi('donations', 'get', {}, tkn),
-        dataApi('expenses', 'get', {}, tkn),
-        dataApi('kitchen', 'get', {}, tkn),
-        dataApi('students', 'get', {}, tkn),
-        dataApi('donors', 'get', {}, tkn),
+      // Fetch profile first
+      let { data: prof, error: profError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('uid', uid)
+        .single();
+
+      // If profile doesn't exist, create it from user metadata
+      if (profError && profError.code === 'PGRST116') {
+        const { data: userData } = await supabase.auth.getUser();
+        const meta = userData?.user?.user_metadata;
+        if (meta) {
+          const { data: newProf, error: insertError } = await supabase
+            .from('profiles')
+            .insert([{ uid: uid, madrasa_name: meta.madrasa_name, phone: meta.phone }])
+            .select()
+            .single();
+          if (!insertError) {
+            prof = newProf;
+          }
+        }
+      }
+
+      const [
+        { data: dons },
+        { data: exps },
+        { data: kit },
+        { data: studs },
+        { data: donsList }
+      ] = await Promise.all([
+        supabase.from('donations').select('*').eq('uid', uid).order('created_at', { ascending: false }),
+        supabase.from('expenses').select('*').eq('uid', uid).order('created_at', { ascending: false }),
+        supabase.from('kitchen').select('*').eq('uid', uid).order('created_at', { ascending: false }),
+        supabase.from('students').select('*').eq('uid', uid).order('created_at', { ascending: false }),
+        supabase.from('donors').select('*').eq('uid', uid).order('created_at', { ascending: false })
       ]);
+
       if (prof) setProfile(prof);
-      setDonations(Array.isArray(dons) ? dons : []);
-      setExpenses(Array.isArray(exps) ? exps : []);
-      setKitchen(Array.isArray(kit) ? kit : []);
-      setStudents(Array.isArray(studs) ? studs : []);
-      setDonors(Array.isArray(dons_list) ? dons_list : []);
+      setDonations(dons || []);
+      setExpenses(exps || []);
+      setKitchen(kit || []);
+      setStudents(studs || []);
+      setDonors(donsList || []);
     } catch (err) {
       console.error('Fetch error:', err);
     } finally {
@@ -79,36 +103,37 @@ export const AppProvider = ({ children }) => {
 
   // ---- AUTH ----
   const login = async (email, password) => {
-    const res = await authApi('login', { email, password });
-    setCurrentUser(res.user);
-    setToken(res.token);
-    localStorage.setItem('madrasa_token', res.token);
-    localStorage.setItem('madrasa_user', JSON.stringify(res.user));
-    await fetchAllData(res.token);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
     return true;
   };
 
   const register = async (userData) => {
-    const res = await authApi('register', userData);
-    setCurrentUser(res.user);
-    setToken(res.token);
-    setProfile({ madrasa_name: userData.name, phone: userData.phone });
-    localStorage.setItem('madrasa_token', res.token);
-    localStorage.setItem('madrasa_user', JSON.stringify(res.user));
+    const { data, error } = await supabase.auth.signUp({
+      email: userData.email,
+      password: userData.password,
+      options: {
+        data: {
+          phone: userData.phone,
+          madrasa_name: userData.name
+        }
+      }
+    });
+    if (error) throw error;
+    
+    // We do not insert the profile here because if Email Confirmations are ON,
+    // the user is not logged in yet, so RLS will block the insert.
+    // The profile will be created automatically in fetchAllData on first login.
+    
+    if (!data.session) {
+      throw new Error("Registration successful! Please check your email to confirm your account before logging in.");
+    }
+    
     return true;
   };
 
   const logout = async () => {
-    localStorage.removeItem('madrasa_token');
-    localStorage.removeItem('madrasa_user');
-    setCurrentUser(null);
-    setToken(null);
-    setProfile(null);
-    setDonations([]);
-    setExpenses([]);
-    setKitchen([]);
-    setStudents([]);
-    setDonors([]);
+    await supabase.auth.signOut();
   };
 
   const resetPassword = async () => {
@@ -119,103 +144,186 @@ export const AppProvider = ({ children }) => {
 
   // ---- PROFILE ----
   const updateProfile = async (p) => {
+    if (!currentUser) return;
     setSyncing(true);
     try {
-      await dataApi('profiles', 'add', { item: p }, token);
-      setProfile(p);
+      const { data, error } = await supabase
+        .from('profiles')
+        .upsert({ uid: currentUser.id, ...p })
+        .select()
+        .single();
+      if (error) throw error;
+      setProfile(data);
+    } catch (err) {
+      console.error('Profile update error:', err);
+      throw err;
     } finally { setSyncing(false); }
   };
 
   // ---- DONATIONS ----
   const addDonation = async (d) => {
+    if (!currentUser) return;
     setSyncing(true);
     try {
-      const newItem = await dataApi('donations', 'add', { item: d }, token);
-      setDonations(prev => [newItem, ...prev]);
+      const { data, error } = await supabase
+        .from('donations')
+        .insert([{ ...d, uid: currentUser.id }])
+        .select()
+        .single();
+      if (error) throw error;
+      setDonations(prev => [data, ...prev]);
+    } catch (err) {
+      console.error('Add donation error:', err);
+      throw err;
     } finally { setSyncing(false); }
   };
 
   const deleteDonation = async (id) => {
     setSyncing(true);
     try {
-      await dataApi('donations', 'delete', { id }, token);
+      const { error } = await supabase.from('donations').delete().eq('id', id);
+      if (error) throw error;
       setDonations(prev => prev.filter(x => x.id !== id));
+    } catch (err) {
+      console.error('Delete donation error:', err);
+      throw err;
     } finally { setSyncing(false); }
   };
 
   // ---- EXPENSES ----
   const addExpense = async (e) => {
+    if (!currentUser) return;
     setSyncing(true);
     try {
-      const newItem = await dataApi('expenses', 'add', { item: e }, token);
-      setExpenses(prev => [newItem, ...prev]);
+      const { data, error } = await supabase
+        .from('expenses')
+        .insert([{ ...e, uid: currentUser.id }])
+        .select()
+        .single();
+      if (error) throw error;
+      setExpenses(prev => [data, ...prev]);
+    } catch (err) {
+      console.error('Add expense error:', err);
+      throw err;
     } finally { setSyncing(false); }
   };
 
   const deleteExpense = async (id) => {
     setSyncing(true);
     try {
-      await dataApi('expenses', 'delete', { id }, token);
+      const { error } = await supabase.from('expenses').delete().eq('id', id);
+      if (error) throw error;
       setExpenses(prev => prev.filter(x => x.id !== id));
+    } catch (err) {
+      console.error('Delete expense error:', err);
+      throw err;
     } finally { setSyncing(false); }
   };
 
   // ---- KITCHEN ----
   const addKitchenItem = async (k) => {
+    if (!currentUser) return;
     setSyncing(true);
     try {
-      const newItem = await dataApi('kitchen', 'add', { item: k }, token);
-      setKitchen(prev => [newItem, ...prev]);
+      const { data, error } = await supabase
+        .from('kitchen')
+        .insert([{ ...k, uid: currentUser.id }])
+        .select()
+        .single();
+      if (error) throw error;
+      setKitchen(prev => [data, ...prev]);
+    } catch (err) {
+      console.error('Add kitchen item error:', err);
+      throw err;
     } finally { setSyncing(false); }
   };
 
   const deleteKitchenItem = async (id) => {
     setSyncing(true);
     try {
-      await dataApi('kitchen', 'delete', { id }, token);
+      const { error } = await supabase.from('kitchen').delete().eq('id', id);
+      if (error) throw error;
       setKitchen(prev => prev.filter(x => x.id !== id));
+    } catch (err) {
+      console.error('Delete kitchen item error:', err);
+      throw err;
     } finally { setSyncing(false); }
   };
 
   // ---- DONORS ----
   const addDonor = async (d) => {
+    if (!currentUser) return;
     setSyncing(true);
     try {
-      const newItem = await dataApi('donors', 'add', { item: d }, token);
-      setDonors(prev => [newItem, ...prev]);
+      const { data, error } = await supabase
+        .from('donors')
+        .insert([{ ...d, uid: currentUser.id }])
+        .select()
+        .single();
+      if (error) throw error;
+      setDonors(prev => [data, ...prev]);
+    } catch (err) {
+      console.error('Add donor error:', err);
+      throw err;
     } finally { setSyncing(false); }
   };
 
   const deleteDonor = async (id) => {
     setSyncing(true);
     try {
-      await dataApi('donors', 'delete', { id }, token);
+      const { error } = await supabase.from('donors').delete().eq('id', id);
+      if (error) throw error;
       setDonors(prev => prev.filter(x => x.id !== id));
+    } catch (err) {
+      console.error('Delete donor error:', err);
+      throw err;
     } finally { setSyncing(false); }
   };
 
   // ---- STUDENTS ----
   const addStudent = async (studentData) => {
+    if (!currentUser) return;
     setSyncing(true);
     try {
-      const newItem = await dataApi('students', 'add', { item: studentData }, token);
-      setStudents(prev => [newItem, ...prev]);
+      const { data, error } = await supabase
+        .from('students')
+        .insert([{ ...studentData, uid: currentUser.id }])
+        .select()
+        .single();
+      if (error) throw error;
+      setStudents(prev => [data, ...prev]);
+    } catch (err) {
+      console.error('Add student error:', err);
+      throw err;
     } finally { setSyncing(false); }
   };
 
   const updateStudent = async (id, updatedData) => {
     setSyncing(true);
     try {
-      await dataApi('students', 'update', { item: { id, ...updatedData } }, token);
-      setStudents(prev => prev.map(s => s.id === id ? { ...s, ...updatedData } : s));
+      const { data, error } = await supabase
+        .from('students')
+        .update(updatedData)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      setStudents(prev => prev.map(s => s.id === id ? { ...s, ...data } : s));
+    } catch (err) {
+      console.error('Update student error:', err);
+      throw err;
     } finally { setSyncing(false); }
   };
 
   const deleteStudent = async (id) => {
     setSyncing(true);
     try {
-      await dataApi('students', 'delete', { id }, token);
+      const { error } = await supabase.from('students').delete().eq('id', id);
+      if (error) throw error;
       setStudents(prev => prev.filter(s => s.id !== id));
+    } catch (err) {
+      console.error('Delete student error:', err);
+      throw err;
     } finally { setSyncing(false); }
   };
 
